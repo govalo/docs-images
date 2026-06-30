@@ -1,0 +1,52 @@
+name: Rehost doc images and update Crisp
+
+# Run from the Actions tab of your PUBLIC images repo.
+# Pulls each Mantle image out of your Crisp articles, saves it here, and
+# rewrites the articles to point at this repo's public raw URLs.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (no downloads, no changes to Crisp)"
+        type: boolean
+        default: true
+      only:
+        description: "Max articles to update (0 = all). Use 1 for a first test."
+        type: string
+        default: "1"
+
+permissions:
+  contents: write
+
+jobs:
+  rehost:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Rehost images and rewrite Crisp articles
+        env:
+          CRISP_WEBSITE_ID: ${{ secrets.CRISP_WEBSITE_ID }}
+          CRISP_TOKEN_ID: ${{ secrets.CRISP_TOKEN_ID }}
+          CRISP_TOKEN_KEY: ${{ secrets.CRISP_TOKEN_KEY }}
+          # raw URL base for THIS repo, e.g. https://raw.githubusercontent.com/govalo/help-images/main
+          PUBLIC_RAW_BASE: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
+        run: |
+          python rehost_images_to_crisp.py \
+            ${{ inputs.dry_run && '--dry-run' || '' }} \
+            --only "${{ inputs.only }}"
+
+      - name: Commit the downloaded images
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add images
+          git diff --cached --quiet || git commit -m "Rehost Mantle doc images ($(date -u +%Y-%m-%d))"
+          git push
